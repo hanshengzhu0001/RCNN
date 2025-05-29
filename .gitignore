@@ -1,0 +1,3 @@
+*.pth
+processed_images.json
+venv/

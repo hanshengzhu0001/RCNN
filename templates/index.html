@@ -1,28 +1,46 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Dense Captioning Toolkit</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Voiceover Platform</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
-  <h2>Dense Captioning Toolkit</h2>
-  <img src="/static/countryside.png" style="max-width: 30%; border: 1px solid #ccc;" />
-  <br><br>
-  <p><strong>Please answer the following questions about the above image for 60-90 seconds.</strong></p>
-  <p><strong>1. What is the image at first glance?</strong></p>
-  <p><strong>2. What are the objects and their counts?</strong></p>
-  <p><strong>3. What does the text say?</strong></p>
-  <p><strong>4. What are the positions of the objects?</strong></p>
-  <p><strong>5. What subtle details are noticeable?</strong></p>
-  <p><strong>6. What is in the background?</strong></p>
-  <p><strong>7. What is the style and color?</strong></p>
-  <button id="startBtn">🎙️ Start Recording</button>
-  <button id="stopBtn" disabled>⏹️ End Recording</button>
-  <p><strong>Raw script:</strong></p>
-  <pre id="result1"></pre>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">Image Voiceover Platform</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Left Column: Image and Recording -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="mb-4">
+                    <img id="currentImage" src="" alt="Current Image" class="w-full h-auto rounded-lg">
+                </div>
+                
+                <div class="flex flex-col items-center space-y-4">
+                    <button id="recordButton" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+                        Start Recording
+                    </button>
+                    <div id="recordingTimer" class="text-xl font-semibold hidden">00:00</div>
+                </div>
+            </div>
 
-  <p><strong>Polished script:</strong></p>
-  <pre id="result2"></pre>
+            <!-- Right Column: Transcription -->
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <h2 class="text-xl font-semibold mb-4">Transcription</h2>
+                <div id="transcription" class="mb-4 p-4 bg-gray-50 rounded-lg min-h-[200px]"></div>
+                
+                <h2 class="text-xl font-semibold mb-4">Refined Transcription</h2>
+                <textarea id="refinedTranscription" class="w-full p-4 bg-gray-50 rounded-lg min-h-[200px] border border-gray-300"></textarea>
+                
+                <button id="saveRefined" class="mt-4 bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">
+                    Save Refined Transcription
+                </button>
+            </div>
+        </div>
+    </div>
 
-  <script src="/static/script.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
-</html>
+</html> 
