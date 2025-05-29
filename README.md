@@ -8,29 +8,41 @@ This web application allows users to:
 
 ## Setup
 
-1. Create a virtual environment:
+1. Install system dependencies:
+```bash
+# On macOS:
+brew install ffmpeg
+
+# On Ubuntu/Debian:
+sudo apt-get install ffmpeg
+
+# On Windows:
+# Download and install ffmpeg from https://ffmpeg.org/download.html
+```
+
+2. Create a virtual environment:
 ```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-2. Install dependencies:
+3. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Set up environment variables:
+4. Set up environment variables:
 Create a `.env` file in the root directory with:
 ```
 OPENAI_API_KEY=your_api_key_here
 ```
 
-4. Run the application:
+5. Run the application:
 ```bash
 python app.py
 ```
 
-5. Open your browser and navigate to `http://localhost:5000`
+6. Open your browser and navigate to `http://localhost:5000`
 
 ## Features
 - Image display and voiceover recording
