@@ -31,18 +31,12 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Set up environment variables:
-Create a `.env` file in the root directory with:
-```
-OPENAI_API_KEY=your_api_key_here
-```
-
-5. Run the application:
+4. Run the application:
 ```bash
 python app.py
 ```
 
-6. Open your browser and navigate to `http://localhost:5000`
+5. Open your browser and navigate to `http://localhost:5000`
 
 ## Features
 - Image display and voiceover recording
