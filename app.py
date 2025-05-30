@@ -4,7 +4,6 @@ import os
 import whisper
 import json
 from datetime import datetime
-from segment_anything import sam_model_registry, SamPredictor
 import torch
 import numpy as np
 from PIL import Image
@@ -12,6 +11,15 @@ import base64
 from io import BytesIO
 import uuid
 from pydub import AudioSegment
+from ultralytics import YOLO
+from skimage import measure
+import torchvision
+from torchvision.models.detection import maskrcnn_resnet50_fpn_v2, MaskRCNN_ResNet50_FPN_V2_Weights
+import io
+import colorsys
+from skimage.measure import label, find_contours, approximate_polygon
+import traceback
+from segment_anything import sam_model_registry, SamPredictor
 
 app = Flask(__name__)
 CORS(app)
@@ -22,22 +30,52 @@ PROCESSED_IMAGES_FILE = "processed_images.json"
 # Initialize Whisper model
 whisper_model = whisper.load_model("base")
 
-# Initialize SAM model
+# Initialize Mask R-CNN
+weights = MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT
+mask_rcnn = maskrcnn_resnet50_fpn_v2(weights=weights)
+mask_rcnn.eval()  # Set to evaluation mode
+transform = weights.transforms()
+
+# Initialize SAM
 sam_checkpoint = "sam_vit_b_01ec64.pth"
 model_type = "vit_b"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device=device)
-predictor = SamPredictor(sam)
+sam_predictor = SamPredictor(sam)
+
+# COCO class mapping
+COCO_CLASSES = {
+    1: 'person', 2: 'bicycle', 3: 'car', 4: 'motorcycle', 5: 'airplane', 6: 'bus', 7: 'train', 8: 'truck',
+    9: 'boat', 10: 'traffic light', 11: 'fire hydrant', 13: 'stop sign', 14: 'parking meter', 15: 'bench',
+    16: 'bird', 17: 'cat', 18: 'dog', 19: 'horse', 20: 'sheep', 21: 'cow', 22: 'elephant', 23: 'bear',
+    24: 'zebra', 25: 'giraffe', 27: 'backpack', 28: 'umbrella', 31: 'handbag', 32: 'tie', 33: 'suitcase',
+    34: 'frisbee', 35: 'skis', 36: 'snowboard', 37: 'sports ball', 38: 'kite', 39: 'baseball bat',
+    40: 'baseball glove', 41: 'skateboard', 42: 'surfboard', 43: 'tennis racket', 44: 'bottle',
+    46: 'wine glass', 47: 'cup', 48: 'fork', 49: 'knife', 50: 'spoon', 51: 'bowl', 52: 'banana',
+    53: 'apple', 54: 'sandwich', 55: 'orange', 56: 'broccoli', 57: 'carrot', 58: 'hot dog', 59: 'pizza',
+    60: 'donut', 61: 'cake', 62: 'chair', 63: 'couch', 64: 'potted plant', 65: 'bed', 67: 'dining table',
+    70: 'toilet', 72: 'tv', 73: 'laptop', 74: 'mouse', 75: 'remote', 76: 'keyboard', 77: 'cell phone',
+    78: 'microwave', 79: 'oven', 80: 'toaster', 81: 'sink', 82: 'refrigerator', 84: 'book', 85: 'clock',
+    86: 'vase', 87: 'scissors', 88: 'teddy bear', 89: 'hair drier', 90: 'toothbrush'
+}
+
+print("Mask R-CNN model loaded successfully")
+print("SAM model loaded successfully")
+
+# Initialize YOLOv10 model for object detection
+yolo_model = YOLO('yolov10n.pt')  # Using the nano model for speed
+print("YOLOv10 model loaded successfully")
 
 # Create necessary directories
 os.makedirs("uploads", exist_ok=True)
 os.makedirs("transcriptions", exist_ok=True)
 os.makedirs("static/images", exist_ok=True)
 
-# Sample images (replace with your actual images)
+# Sample images
 SAMPLE_IMAGES = [
-    "landscape1.jpg",
+    "object1.jpg",     # New object image
+    "landscape1.jpg",  # Original landscape images
     "landscape2.jpg",
     "landscape3.jpg"
 ]
@@ -64,15 +102,12 @@ def get_image():
     user_id = request.cookies.get('user_id')
     if not user_id:
         user_id = str(uuid.uuid4())
-        # Create a response using jsonify first
         response = make_response(jsonify({"image": SAMPLE_IMAGES[0]}))
         response.set_cookie('user_id', user_id)
 
-        # Initialize processed images for the new user
         processed_data = load_processed_images()
         processed_data[user_id] = []
         save_processed_images(processed_data)
-
     else:
         processed_data = load_processed_images()
         processed_images = processed_data.get(user_id, [])
@@ -83,22 +118,269 @@ def get_image():
                 next_image = image
                 break
 
-        # If all images processed, reset and get the first image
         if next_image is None:
             processed_data[user_id] = []
             save_processed_images(processed_data)
             next_image = SAMPLE_IMAGES[0]
             
-        # Create a response using jsonify
         response = make_response(jsonify({"image": next_image}))
 
     return response
+
+@app.route('/api/pre-segment', methods=['POST'])
+def pre_segment():
+    try:
+        data = request.json
+        image_data = data['image'].split(',')[1]
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+        image_array = np.array(image)
+        
+        # Get image dimensions
+        height, width = image_array.shape[:2]
+        print(f"Processing image of size: {width}x{height}")
+        
+        # Transform image for Mask R-CNN
+        img_tensor = transform(image)
+        
+        # Run Mask R-CNN prediction
+        with torch.no_grad():
+            prediction = mask_rcnn([img_tensor])[0]
+        
+        # Get unique regions
+        unique_regions = []
+        used_pixels = np.zeros((height, width), dtype=bool)
+        
+        # First pass: create background regions
+        # Find connected components in the entire image
+        labeled_image = label(np.ones((height, width), dtype=bool))
+        for region_id in range(1, labeled_image.max() + 1):
+            mask = labeled_image == region_id
+            
+            # Skip if region is too small
+            if np.sum(mask) < 100:  # Minimum 100 pixels
+                continue
+            
+            # Get contours for visualization
+            contours = find_contours(mask, 0.5)
+            polygons = []
+            for contour in contours:
+                # Simplify polygon
+                contour = approximate_polygon(contour, tolerance=1.0)
+                # Ensure polygon is closed
+                if len(contour) > 0 and not np.array_equal(contour[0], contour[-1]):
+                    contour = np.vstack((contour, contour[0]))
+                # Fix diagonal reflection by swapping x and y coordinates
+                contour = np.flip(contour, axis=1)
+                polygons.append(contour.tolist())
+            
+            # Generate a unique color for this background region
+            color = [int(c * 255) for c in colorsys.hsv_to_rgb(0.5, 0.3, 0.8)]  # Grayish color
+            
+            # Add background region to list
+            unique_regions.append({
+                'id': len(unique_regions),
+                'class': 'background',
+                'score': 1.0,
+                'polygons': polygons,
+                'color': color
+            })
+        
+        # Second pass: overlay detected objects
+        for idx in range(len(prediction['masks'])):
+            mask = prediction['masks'][idx][0].numpy() > 0.5
+            score = float(prediction['scores'][idx])
+            class_id = int(prediction['labels'][idx])
+            
+            # Skip if score is too low
+            if score < 0.5:  # Confidence threshold
+                continue
+                
+            # Skip if mask is too small
+            if np.sum(mask) < 100:  # Minimum 100 pixels
+                continue
+            
+            # Get class name
+            class_name = COCO_CLASSES.get(class_id, f"unknown_{class_id}")
+            
+            # Get contours for visualization
+            contours = find_contours(mask, 0.5)
+            polygons = []
+            for contour in contours:
+                # Simplify polygon
+                contour = approximate_polygon(contour, tolerance=1.0)
+                # Ensure polygon is closed
+                if len(contour) > 0 and not np.array_equal(contour[0], contour[-1]):
+                    contour = np.vstack((contour, contour[0]))
+                # Fix diagonal reflection by swapping x and y coordinates
+                contour = np.flip(contour, axis=1)
+                polygons.append(contour.tolist())
+            
+            # Generate a unique color for this region
+            color = [int(c * 255) for c in colorsys.hsv_to_rgb(class_id / 90, 0.8, 0.8)]
+            
+            # Add region to list
+            unique_regions.append({
+                'id': len(unique_regions),
+                'class': class_name,
+                'score': score,
+                'polygons': polygons,
+                'color': color
+            })
+            
+            # Mark pixels as used
+            used_pixels = np.logical_or(used_pixels, mask)
+        
+        print(f"Generated {len(unique_regions)} unique regions")
+        return jsonify({'regions': unique_regions})
+        
+    except Exception as e:
+        print(f"Error in pre-segment: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/segment', methods=['POST'])
+def segment():
+    try:
+        data = request.json
+        image_data = data['image'].split(',')[1]
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+        image_array = np.array(image)
+        
+        # Get point coordinates
+        x = int(data['x'])
+        y = int(data['y'])
+        
+        # Check if point is in a background region
+        is_background = True
+        for region in data.get('regions', []):
+            if region['class'] != 'background':
+                # Check if point is inside any non-background region
+                for polygon in region['polygons']:
+                    if point_in_polygon(x, y, polygon):
+                        is_background = False
+                        break
+                if not is_background:
+                    break
+        
+        if not is_background:
+            return jsonify({'error': 'Point is not in a background region'}), 400
+        
+        # Set image in SAM predictor
+        sam_predictor.set_image(image_array)
+        
+        # Get mask from SAM
+        masks, scores, _ = sam_predictor.predict(
+            point_coords=np.array([[x, y]]),
+            point_labels=np.array([1]),
+            multimask_output=True
+        )
+        
+        # Get the best mask
+        best_mask = masks[np.argmax(scores)]
+        
+        # Get contours for visualization
+        contours = find_contours(best_mask, 0.5)
+        polygons = []
+        for contour in contours:
+            # Simplify polygon
+            contour = approximate_polygon(contour, tolerance=1.0)
+            # Ensure polygon is closed
+            if len(contour) > 0 and not np.array_equal(contour[0], contour[-1]):
+                contour = np.vstack((contour, contour[0]))
+            # Fix diagonal reflection by swapping x and y coordinates
+            contour = np.flip(contour, axis=1)
+            polygons.append(contour.tolist())
+        
+        # Generate a unique color for this region
+        color = [int(c * 255) for c in colorsys.hsv_to_rgb(0.5, 0.3, 0.8)]  # Grayish color
+        
+        return jsonify({
+            'id': -1,  # New region
+            'class': 'background',
+            'score': float(np.max(scores)),
+            'polygons': polygons,
+            'color': color
+        })
+        
+    except Exception as e:
+        print(f"Error in segment: {str(e)}")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+def point_in_polygon(x, y, polygon):
+    """Check if a point is inside a polygon using ray casting algorithm."""
+    n = len(polygon)
+    inside = False
+    p1x, p1y = polygon[0]
+    for i in range(n + 1):
+        p2x, p2y = polygon[i % n]
+        if y > min(p1y, p2y):
+            if y <= max(p1y, p2y):
+                if x <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or x <= xinters:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
+    return inside
+
+@app.route('/api/detect', methods=['POST'])
+def detect_objects():
+    print("Received detection request")
+    data = request.json
+    image_data = data.get('image')
+    
+    try:
+        # Convert base64 image to numpy array
+        image_data = image_data.split(',')[1]
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(BytesIO(image_bytes))
+        
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+            
+        image_height, image_width = np.array(image).shape[:2]
+        
+        # Transform image for Mask R-CNN
+        img_tensor = transform(image)
+        
+        # Run Mask R-CNN prediction
+        with torch.no_grad():
+            prediction = mask_rcnn([img_tensor])[0]
+        
+        # Process results
+        detections = []
+        for idx in range(len(prediction['boxes'])):
+            box = prediction['boxes'][idx].numpy()
+            score = float(prediction['scores'][idx])
+            class_id = int(prediction['labels'][idx])
+            
+            if score > 0.5:  # Confidence threshold
+                class_name = COCO_CLASSES.get(class_id, f"unknown_{class_id}")
+                
+                detections.append({
+                    "box": [float(box[0]), float(box[1]), float(box[2]), float(box[3])],
+                    "confidence": score,
+                    "class": class_name
+                })
+        
+        return jsonify({
+            "detections": detections
+        })
+
+    except Exception as e:
+        print(f"Error during detection: {e}")
+        import traceback
+        print(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/transcribe', methods=['POST'])
 def transcribe():
     user_id = request.cookies.get('user_id')
     if not user_id:
-         return jsonify({"error": "User ID not found"}), 400 # Should not happen if /get-image is called first
+        return jsonify({"error": "User ID not found"}), 400
 
     if 'audio' not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
@@ -116,12 +398,12 @@ def transcribe():
     click_timestamps = json.loads(click_timestamps_str) if click_timestamps_str else []
     
     # Define fixed duration to save before the first click (in ms)
-    PRE_CLICK_DURATION_MS = 2000 # 2 seconds
+    PRE_CLICK_DURATION_MS = 2000  # 2 seconds
 
     segmented_transcriptions = []
     
     # Determine segment start and end times
-    segment_times = [] # List of (start_time_ms, end_time_ms)
+    segment_times = []  # List of (start_time_ms, end_time_ms)
     
     if not click_timestamps:
         # If no clicks, transcribe the whole audio
@@ -148,7 +430,7 @@ def transcribe():
     # Process each segment
     for i, (start_time, end_time) in enumerate(segment_times):
         if start_time >= end_time:
-            continue # Skip empty segments
+            continue  # Skip empty segments
             
         segment = full_audio[start_time:end_time]
         
@@ -174,16 +456,9 @@ def transcribe():
     segmented_transcription_path = f"transcriptions/segmented_transcription_{timestamp}.json"
     with open(segmented_transcription_path, "w") as f:
         json.dump(segmented_transcriptions, f, indent=4)
-
-    # Save transcription of the whole audio (optional, could be removed)
-    # result = whisper_model.transcribe(audio_path)
-    # transcription = result["text"]
-    # transcription_path = f"transcriptions/transcription_{timestamp}.txt"
-    # with open(transcription_path, "w") as f:
-    #     f.write(transcription)
     
     # Mark image as processed for the user
-    image_filename = request.form.get('image_filename') # Get filename from form data
+    image_filename = request.form.get('image_filename')
     if image_filename:
         processed_data = load_processed_images()
         if user_id not in processed_data:
@@ -192,10 +467,9 @@ def transcribe():
             processed_data[user_id].append(image_filename)
         save_processed_images(processed_data)
     
-    # Return segmented transcriptions
     return jsonify({
         "segmented_transcriptions": segmented_transcriptions,
-        "timestamp": timestamp # Keep the overall timestamp if needed
+        "timestamp": timestamp
     })
 
 @app.route('/api/save-refined', methods=['POST'])
@@ -212,58 +486,6 @@ def save_refined():
         f.write(refined_text)
     
     return jsonify({"success": True})
-
-@app.route('/api/segment', methods=['POST'])
-def segment():
-    print("Received segmentation request") # Debug print
-    data = request.json
-    image_data = data.get('image')
-    points = data.get('points')
-    
-    print(f"Image data received (first 50 chars): {image_data[:50]}...") # Debug print
-    print(f"Points received: {points}") # Debug print
-
-    try:
-        # Convert base64 image to numpy array
-        image_data = image_data.split(',')[1]
-        image_bytes = base64.b64decode(image_data)
-        image = Image.open(BytesIO(image_bytes))
-        image_array = np.array(image)
-        
-        # Set image in predictor
-        predictor.set_image(image_array)
-        
-        # Convert points to input format
-        input_points = np.array(points)
-        input_labels = np.ones(len(points))
-        
-        print("Attempting SAM prediction...") # Debug print before prediction
-        # Generate mask
-        masks, scores, logits = predictor.predict(
-            point_coords=input_points,
-            point_labels=input_labels,
-            multimask_output=True
-        )
-        
-        print(f"Segmentation masks generated: {len(masks)}") # Debug print
-        print(f"Segmentation scores: {scores}") # Debug print
-
-        # Convert mask to base64
-        mask_image = Image.fromarray(masks[0].astype(np.uint8) * 255)
-        buffered = BytesIO()
-        mask_image.save(buffered, format="PNG")
-        mask_base64 = base64.b64encode(buffered.getvalue()).decode()
-        
-        response_data = {
-            "mask": f"data:image/png;base64,{mask_base64}",
-            "score": float(scores[0])
-        }
-        print("Sending segmentation response") # Debug print
-        return jsonify(response_data)
-
-    except Exception as e:
-        print(f"Error during segmentation: {e}") # Log the error
-        return jsonify({"error": str(e)}), 500 # Return error to frontend
 
 if __name__ == '__main__':
     app.run(debug=True) 

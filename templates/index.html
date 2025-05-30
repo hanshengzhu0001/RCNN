@@ -6,6 +6,56 @@
     <title>Image Voiceover Platform</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .image-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        #currentImage {
+            max-width: 100%;
+            height: auto;
+        }
+        .segmentation-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .region {
+            position: absolute;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: filter 0.3s ease;
+        }
+        .region:hover {
+            filter: brightness(1.2);
+        }
+        .region.dimmed {
+            filter: brightness(0.7);
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        .recording {
+            color: red;
+        }
+        #transcription {
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+        .segment {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ccc;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
@@ -15,7 +65,10 @@
             <!-- Left Column: Image and Recording -->
             <div class="bg-white rounded-lg shadow-lg p-6">
                 <div class="mb-4">
-                    <img id="currentImage" src="" alt="Current Image" class="w-full h-auto rounded-lg">
+                    <div class="image-container">
+                        <img id="currentImage" src="" alt="Current Image" class="w-full h-auto rounded-lg">
+                        <div id="segmentationOverlay" class="segmentation-overlay"></div>
+                    </div>
                 </div>
                 
                 <div class="flex flex-col items-center space-y-4">
