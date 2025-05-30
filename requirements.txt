@@ -3,11 +3,12 @@ werkzeug==2.0.3
 flask-cors==3.0.10
 openai-whisper==20231117
 segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
-torch==2.1.0
-torchvision==0.16.0
-numpy==1.24.3
+torch>=2.2.0
+torchvision>=0.17.0
+numpy>=1.26.0
 Pillow==10.0.0
 python-dotenv==1.0.0
 pydub==0.25.1
 transformers==4.36.0
 timm==0.9.12 
+openai==1.60.0
