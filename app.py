@@ -12,9 +12,17 @@ import base64
 from io import BytesIO
 import uuid
 from pydub import AudioSegment
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 # State file for processed images per user
 PROCESSED_IMAGES_FILE = "processed_images.json"
@@ -94,11 +102,43 @@ def get_image():
 
     return response
 
+def refine_transcription_with_gpt(transcription, image_filename):
+    try:
+        prompt = f"""As an AI trained to generate detailed image descriptions, please refine and expand the following transcription to make it more suitable for training visual language models. The transcription is about the image named '{image_filename}'.
+
+Original transcription:
+{transcription}
+
+Please provide a refined version that:
+1. Is more detailed and descriptive
+2. Uses precise and specific language
+3. Captures spatial relationships between objects
+4. Includes relevant attributes (colors, sizes, textures)
+5. Maintains a natural, flowing narrative
+6. Focuses on visual elements that would be valuable for training vision-language models
+
+Refined description:"""
+
+        response = client.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=[
+                {"role": "system", "content": "You are an expert at generating detailed, high-quality image descriptions for training vision-language models."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=500
+        )
+        
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error in GPT refinement: {str(e)}")
+        return None
+
 @app.route('/api/transcribe', methods=['POST'])
 def transcribe():
     user_id = request.cookies.get('user_id')
     if not user_id:
-         return jsonify({"error": "User ID not found"}), 400 # Should not happen if /get-image is called first
+         return jsonify({"error": "User ID not found"}), 400
 
     if 'audio' not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
@@ -107,6 +147,9 @@ def transcribe():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     audio_path = f"uploads/recording_{timestamp}.wav"
     audio_file.save(audio_path)
+    
+    # Get image filename from form data
+    image_filename = request.form.get('image_filename')
     
     # Load the full audio recording
     full_audio = AudioSegment.from_file(audio_path)
@@ -121,25 +164,21 @@ def transcribe():
     segmented_transcriptions = []
     
     # Determine segment start and end times
-    segment_times = [] # List of (start_time_ms, end_time_ms)
+    segment_times = []
     
     if not click_timestamps:
-        # If no clicks, transcribe the whole audio
         segment_times.append((0, len(full_audio)))
     else:
-        # First segment: from PRE_CLICK_DURATION_MS before the first click to the first click
         first_click_time = click_timestamps[0]
         start_time = max(0, first_click_time - PRE_CLICK_DURATION_MS)
         end_time = first_click_time
         segment_times.append((start_time, end_time))
 
-        # Subsequent segments: from one click to the next
         for i in range(len(click_timestamps) - 1):
             start_time = click_timestamps[i]
             end_time = click_timestamps[i+1]
             segment_times.append((start_time, end_time))
 
-        # Last segment: from the last click to the end of the audio
         last_click_time = click_timestamps[-1]
         start_time = last_click_time
         end_time = len(full_audio)
@@ -148,15 +187,12 @@ def transcribe():
     # Process each segment
     for i, (start_time, end_time) in enumerate(segment_times):
         if start_time >= end_time:
-            continue # Skip empty segments
+            continue
             
         segment = full_audio[start_time:end_time]
-        
-        # Save segment temporarily (Whisper needs a file path)
         segment_path = f"uploads/segment_{timestamp}_{i}.wav"
         segment.export(segment_path, format="wav")
         
-        # Transcribe segment using Whisper
         result = whisper_model.transcribe(segment_path)
         segment_transcription = result["text"]
         
@@ -167,23 +203,20 @@ def transcribe():
             "transcription": segment_transcription.strip()
         })
         
-        # Clean up temporary segment file
         os.remove(segment_path)
     
-    # Save all segmented transcriptions
+    # Save segmented transcriptions
     segmented_transcription_path = f"transcriptions/segmented_transcription_{timestamp}.json"
     with open(segmented_transcription_path, "w") as f:
         json.dump(segmented_transcriptions, f, indent=4)
-
-    # Save transcription of the whole audio (optional, could be removed)
-    # result = whisper_model.transcribe(audio_path)
-    # transcription = result["text"]
-    # transcription_path = f"transcriptions/transcription_{timestamp}.txt"
-    # with open(transcription_path, "w") as f:
-    #     f.write(transcription)
+    
+    # Combine all transcriptions for GPT refinement
+    combined_transcription = "\n".join([seg["transcription"] for seg in segmented_transcriptions])
+    
+    # Get refined transcription from GPT
+    refined_transcription = refine_transcription_with_gpt(combined_transcription, image_filename)
     
     # Mark image as processed for the user
-    image_filename = request.form.get('image_filename') # Get filename from form data
     if image_filename:
         processed_data = load_processed_images()
         if user_id not in processed_data:
@@ -192,10 +225,10 @@ def transcribe():
             processed_data[user_id].append(image_filename)
         save_processed_images(processed_data)
     
-    # Return segmented transcriptions
     return jsonify({
         "segmented_transcriptions": segmented_transcriptions,
-        "timestamp": timestamp # Keep the overall timestamp if needed
+        "refined_transcription": refined_transcription,
+        "timestamp": timestamp
     })
 
 @app.route('/api/save-refined', methods=['POST'])
@@ -264,6 +297,43 @@ def segment():
     except Exception as e:
         print(f"Error during segmentation: {e}") # Log the error
         return jsonify({"error": str(e)}), 500 # Return error to frontend
+
+@app.route('/api/save-objects', methods=['POST'])
+def save_objects():
+    data = request.json
+    image_filename = data.get('image_filename')
+    objects = data.get('objects', [])
+    
+    if not image_filename:
+        return jsonify({"error": "Missing image filename"}), 400
+    
+    # Create a unique filename for the objects data
+    base_filename = os.path.splitext(image_filename)[0]
+    objects_path = f"static/objects/{base_filename}_objects.json"
+    
+    # Create objects directory if it doesn't exist
+    os.makedirs("static/objects", exist_ok=True)
+    
+    # Save objects data
+    with open(objects_path, 'w') as f:
+        json.dump({
+            "image_filename": image_filename,
+            "objects": objects,
+            "timestamp": datetime.now().isoformat()
+        }, f, indent=4)
+    
+    return jsonify({"success": True})
+
+@app.route('/api/get-objects/<image_filename>')
+def get_objects(image_filename):
+    base_filename = os.path.splitext(image_filename)[0]
+    objects_path = f"static/objects/{base_filename}_objects.json"
+    
+    if os.path.exists(objects_path):
+        with open(objects_path, 'r') as f:
+            return jsonify(json.load(f))
+    
+    return jsonify({"objects": []})
 
 if __name__ == '__main__':
     app.run(debug=True) 

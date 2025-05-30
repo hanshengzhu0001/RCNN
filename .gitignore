@@ -1,3 +1,9 @@
 *.pth
 processed_images.json
 venv/
+static/objects/*
+static/masks/*
+transcriptions/*
+uploads/*
+segmentation_data.json
+.env
