@@ -22,6 +22,8 @@ import traceback
 from segment_anything import sam_model_registry, SamPredictor
 from openai import OpenAI
 from dotenv import load_dotenv
+from transformers import AutoImageProcessor, MaskFormerForInstanceSegmentation
+from scipy import ndimage
 
 # Load environment variables
 load_dotenv()
@@ -38,42 +40,38 @@ PROCESSED_IMAGES_FILE = "processed_images.json"
 # Initialize Whisper model
 whisper_model = whisper.load_model("base")
 
-# Initialize Mask R-CNN
-weights = MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT
-mask_rcnn = maskrcnn_resnet50_fpn_v2(weights=weights)
-mask_rcnn.eval()  # Set to evaluation mode
-transform = weights.transforms()
+# Initialize MaskFormer
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+maskformer_processor = AutoImageProcessor.from_pretrained("facebook/maskformer-swin-base-ade")
+maskformer_model = MaskFormerForInstanceSegmentation.from_pretrained("facebook/maskformer-swin-base-ade")
+maskformer_model.to(device)
+maskformer_model.eval()
+
+# Define image transform for Mask R-CNN
+transform = torchvision.transforms.Compose([
+    torchvision.transforms.ToTensor(),
+])
+
+# ADE20k class labels
+ADE20K_CLASSES = [
+    "wall", "building", "sky", "floor", "tree", "ceiling", "road", "bed", "windowpane", "grass",
+    "cabinet", "sidewalk", "person", "earth", "door", "table", "mountain", "plant", "curtain", "chair",
+    "car", "water", "painting", "sofa", "shelf", "house", "sea", "mirror", "rug", "field", "armchair",
+    "seat", "fence", "desk", "rock", "wardrobe", "lamp", "bathtub", "railing", "cushion", "base",
+    "box", "column", "signboard", "chest", "counter", "sand", "sink", "skyscraper", "fireplace",
+    "refrigerator", "grandstand", "path", "stairs", "runway", "case", "pool", "pillow", "screen",
+    "stairway", "river", "bridge", "bookcase", "blind", "coffee table", "toilet", "flower", "book",
+    "hill", "bench", "countertop", "stove", "palm", "kitchen island", "computer", "horse", "unknown"
+]
+
+print("MaskFormer model loaded successfully")
 
 # Initialize SAM
 sam_checkpoint = "sam_vit_b_01ec64.pth"
 model_type = "vit_b"
-device = "cuda" if torch.cuda.is_available() else "cpu"
 sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
 sam.to(device=device)
 sam_predictor = SamPredictor(sam)
-
-# COCO class mapping
-COCO_CLASSES = {
-    1: 'person', 2: 'bicycle', 3: 'car', 4: 'motorcycle', 5: 'airplane', 6: 'bus', 7: 'train', 8: 'truck',
-    9: 'boat', 10: 'traffic light', 11: 'fire hydrant', 13: 'stop sign', 14: 'parking meter', 15: 'bench',
-    16: 'bird', 17: 'cat', 18: 'dog', 19: 'horse', 20: 'sheep', 21: 'cow', 22: 'elephant', 23: 'bear',
-    24: 'zebra', 25: 'giraffe', 27: 'backpack', 28: 'umbrella', 31: 'handbag', 32: 'tie', 33: 'suitcase',
-    34: 'frisbee', 35: 'skis', 36: 'snowboard', 37: 'sports ball', 38: 'kite', 39: 'baseball bat',
-    40: 'baseball glove', 41: 'skateboard', 42: 'surfboard', 43: 'tennis racket', 44: 'bottle',
-    46: 'wine glass', 47: 'cup', 48: 'fork', 49: 'knife', 50: 'spoon', 51: 'bowl', 52: 'banana',
-    53: 'apple', 54: 'sandwich', 55: 'orange', 56: 'broccoli', 57: 'carrot', 58: 'hot dog', 59: 'pizza',
-    60: 'donut', 61: 'cake', 62: 'chair', 63: 'couch', 64: 'potted plant', 65: 'bed', 67: 'dining table',
-    70: 'toilet', 72: 'tv', 73: 'laptop', 74: 'mouse', 75: 'remote', 76: 'keyboard', 77: 'cell phone',
-    78: 'microwave', 79: 'oven', 80: 'toaster', 81: 'sink', 82: 'refrigerator', 84: 'book', 85: 'clock',
-    86: 'vase', 87: 'scissors', 88: 'teddy bear', 89: 'hair drier', 90: 'toothbrush'
-}
-
-print("Mask R-CNN model loaded successfully")
-print("SAM model loaded successfully")
-
-# Initialize YOLOv10 model for object detection
-yolo_model = YOLO('yolov10n.pt')  # Using the nano model for speed
-print("YOLOv10 model loaded successfully")
 
 # Create necessary directories
 os.makedirs("uploads", exist_ok=True)
@@ -82,8 +80,9 @@ os.makedirs("static/images", exist_ok=True)
 
 # Sample images
 SAMPLE_IMAGES = [
-    "object1.jpg",     # New object image
-    "landscape1.jpg",  # Original landscape images
+    "object1.jpg",     # First object image
+    "object2.jpg",     # Second object image
+    "landscape1.jpg",  # Landscape images
     "landscape2.jpg",
     "landscape3.jpg"
 ]
@@ -148,20 +147,61 @@ def pre_segment():
         height, width = image_array.shape[:2]
         print(f"Processing image of size: {width}x{height}")
         
-        # Transform image for Mask R-CNN
-        img_tensor = transform(image)
+        # Preprocess image for MaskFormer
+        inputs = maskformer_processor(images=image, return_tensors="pt").to(device)
         
-        # Run Mask R-CNN prediction
+        # Run MaskFormer prediction
         with torch.no_grad():
-            prediction = mask_rcnn([img_tensor])[0]
+            outputs = maskformer_model(**inputs)
+        
+        # Get the segmentation results
+        predicted_semantic_map = maskformer_processor.post_process_semantic_segmentation(
+            outputs, target_sizes=[(height, width)]
+        )[0]
+        
+        # Move the tensor to CPU and convert to NumPy
+        predicted_semantic_map = predicted_semantic_map.cpu().numpy()
         
         # Get unique regions
         unique_regions = []
         used_pixels = np.zeros((height, width), dtype=bool)
         
-        # First pass: create background regions
-        # Find connected components in the entire image
-        labeled_image = label(np.ones((height, width), dtype=bool))
+        # Process each unique class in the semantic map
+        unique_classes = np.unique(predicted_semantic_map)
+        for class_id in unique_classes:
+            if class_id == 0:  # Skip background class
+                continue
+                
+            # Create mask for this class
+            mask = predicted_semantic_map == class_id
+            
+            # Skip if mask is too small
+            if np.sum(mask) < 100:  # Minimum 100 pixels
+                continue
+            
+            # Get class name
+            class_name = ADE20K_CLASSES[class_id] if class_id < len(ADE20K_CLASSES) else "unknown"
+            
+            # Get the raw mask as a binary array
+            binary_mask = mask.astype(np.uint8)
+            
+            # Generate a unique color for this region
+            color = [int(c * 255) for c in colorsys.hsv_to_rgb(class_id / len(ADE20K_CLASSES), 0.8, 0.8)]
+            
+            # Add region to list with mask and color
+            unique_regions.append({
+                'id': len(unique_regions),
+                'class': class_name,
+                'score': 1.0,  # Semantic segmentation doesn't provide confidence scores
+                'mask': binary_mask.tolist(),
+                'color': color
+            })
+            
+            # Mark pixels as used
+            used_pixels = np.logical_or(used_pixels, mask)
+        
+        # Create background regions for unused pixels
+        labeled_image = label(~used_pixels)
         for region_id in range(1, labeled_image.max() + 1):
             mask = labeled_image == region_id
             
@@ -169,75 +209,20 @@ def pre_segment():
             if np.sum(mask) < 100:  # Minimum 100 pixels
                 continue
             
-            # Get contours for visualization
-            contours = find_contours(mask, 0.5)
-            polygons = []
-            for contour in contours:
-                # Simplify polygon
-                contour = approximate_polygon(contour, tolerance=1.0)
-                # Ensure polygon is closed
-                if len(contour) > 0 and not np.array_equal(contour[0], contour[-1]):
-                    contour = np.vstack((contour, contour[0]))
-                # Fix diagonal reflection by swapping x and y coordinates
-                contour = np.flip(contour, axis=1)
-                polygons.append(contour.tolist())
+            # Get the raw mask as a binary array
+            binary_mask = mask.astype(np.uint8)
             
             # Generate a unique color for this background region
             color = [int(c * 255) for c in colorsys.hsv_to_rgb(0.5, 0.3, 0.8)]  # Grayish color
             
-            # Add background region to list
+            # Add background region to list with mask and color
             unique_regions.append({
                 'id': len(unique_regions),
                 'class': 'background',
                 'score': 1.0,
-                'polygons': polygons,
+                'mask': binary_mask.tolist(),
                 'color': color
             })
-        
-        # Second pass: overlay detected objects
-        for idx in range(len(prediction['masks'])):
-            mask = prediction['masks'][idx][0].numpy() > 0.5
-            score = float(prediction['scores'][idx])
-            class_id = int(prediction['labels'][idx])
-            
-            # Skip if score is too low
-            if score < 0.5:  # Confidence threshold
-                continue
-                
-            # Skip if mask is too small
-            if np.sum(mask) < 100:  # Minimum 100 pixels
-                continue
-            
-            # Get class name
-            class_name = COCO_CLASSES.get(class_id, f"unknown_{class_id}")
-            
-            # Get contours for visualization
-            contours = find_contours(mask, 0.5)
-            polygons = []
-            for contour in contours:
-                # Simplify polygon
-                contour = approximate_polygon(contour, tolerance=1.0)
-                # Ensure polygon is closed
-                if len(contour) > 0 and not np.array_equal(contour[0], contour[-1]):
-                    contour = np.vstack((contour, contour[0]))
-                # Fix diagonal reflection by swapping x and y coordinates
-                contour = np.flip(contour, axis=1)
-                polygons.append(contour.tolist())
-            
-            # Generate a unique color for this region
-            color = [int(c * 255) for c in colorsys.hsv_to_rgb(class_id / 90, 0.8, 0.8)]
-            
-            # Add region to list
-            unique_regions.append({
-                'id': len(unique_regions),
-                'class': class_name,
-                'score': score,
-                'polygons': polygons,
-                'color': color
-            })
-            
-            # Mark pixels as used
-            used_pixels = np.logical_or(used_pixels, mask)
         
         print(f"Generated {len(unique_regions)} unique regions")
         return jsonify({'regions': unique_regions})
@@ -351,25 +336,47 @@ def detect_objects():
             
         image_height, image_width = np.array(image).shape[:2]
         
-        # Transform image for Mask R-CNN
-        img_tensor = transform(image)
+        # Preprocess image for MaskFormer
+        inputs = maskformer_processor(images=image, return_tensors="pt").to(device)
         
-        # Run Mask R-CNN prediction
+        # Run MaskFormer prediction
         with torch.no_grad():
-            prediction = mask_rcnn([img_tensor])[0]
+            outputs = maskformer_model(**inputs)
+        
+        # Get class predictions and scores
+        class_logits = outputs.class_queries_logits
+        mask_logits = outputs.masks_queries_logits
         
         # Process results
         detections = []
-        for idx in range(len(prediction['boxes'])):
-            box = prediction['boxes'][idx].numpy()
-            score = float(prediction['scores'][idx])
-            class_id = int(prediction['labels'][idx])
+        for idx in range(len(class_logits[0])):
+            # Get class prediction and score
+            class_scores = torch.softmax(class_logits[0][idx], dim=0)
+            class_id = torch.argmax(class_scores).item()
+            score = float(class_scores[class_id])
             
-            if score > 0.5:  # Confidence threshold
-                class_name = COCO_CLASSES.get(class_id, f"unknown_{class_id}")
+            # Skip if score is too low
+            if score < 0.5:  # Confidence threshold
+                continue
+            
+            # Get mask prediction
+            mask = torch.sigmoid(mask_logits[0][idx]).cpu().numpy()
+            
+            # Skip if mask is too small
+            if np.sum(mask > 0.5) < 100:  # Minimum 100 pixels
+                continue
+            
+            # Get class name
+            class_name = ADE20K_CLASSES[class_id] if class_id < len(ADE20K_CLASSES) else "unknown"
+            
+            # Get bounding box from mask
+            y_indices, x_indices = np.where(mask > 0.5)
+            if len(y_indices) > 0 and len(x_indices) > 0:
+                x_min, x_max = np.min(x_indices), np.max(x_indices)
+                y_min, y_max = np.min(y_indices), np.max(y_indices)
                 
                 detections.append({
-                    "box": [float(box[0]), float(box[1]), float(box[2]), float(box[3])],
+                    "box": [float(x_min), float(y_min), float(x_max), float(y_max)],
                     "confidence": score,
                     "class": class_name
                 })
