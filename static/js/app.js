@@ -111,27 +111,36 @@ async function runObjectDetection() {
         // Get image as base64
         const imageBlob = await fetch(currentImage.src).then(res => res.blob());
         const reader = new FileReader();
-        reader.readAsDataURL(imageBlob);
         
-        reader.onloadend = async () => {
-            const base64data = reader.result;
-            
-            const response = await fetch('/api/detect', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    image: base64data
-                })
-            });
-            
-            const data = await response.json();
-            currentDetections = data.detections;
-            console.log('Object detections:', currentDetections);
-        };
+        const base64data = await new Promise((resolve) => {
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(imageBlob);
+        });
+        
+        const response = await fetch('/api/detect', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                image: base64data
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Object detection request failed');
+        }
+        
+        const data = await response.json();
+        if (!data.detections) {
+            throw new Error('No detections in response');
+        }
+        
+        currentDetections = data.detections;
+        console.log('Object detections:', currentDetections);
     } catch (err) {
         console.error('Error running object detection:', err);
+        currentDetections = []; // Reset detections on error
     }
 }
 
@@ -160,16 +169,6 @@ function getObjectAtPoint(point) {
     }
     console.log('No object found at point');
     return null;
-    
-    // Set up object marking handlers
-    markObjectsButton.addEventListener('click', toggleMarkingMode);
-    saveMarkObject.addEventListener('click', saveObject);
-    cancelMarkObject.addEventListener('click', cancelObjectMarking);
-    objectName.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            saveObject();
-        }
-    });
 }
 
 // Recording functions
@@ -378,8 +377,31 @@ async function handleImageClick(event) {
         showObjectDialog(x, y);
         return;
     }
+
+    // Check for object detection first
+    const object = getObjectAtPoint([x, y]);
+    const tooltip = d3.select(".segment-tooltip");
     
-    // Only allow segmentation clicks during recording
+    if (object) {
+        // Display object detection result with confidence score
+        tooltip.html(`${object.name} (${(object.confidence * 100).toFixed(1)}%)`)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY + 10) + "px")
+            .style("display", "block");
+    } else {
+        // Display "No object detected" with 0% confidence
+        tooltip.html(`No object detected (0.0%)`)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY + 10) + "px")
+            .style("display", "block");
+    }
+    
+    // Hide tooltip after 2 seconds
+    setTimeout(() => {
+        tooltip.style("display", "none");
+    }, 2000);
+    
+    // Only proceed with segmentation if recording
     if (!mediaRecorder || mediaRecorder.state !== 'recording') {
         console.log('Not recording, segmentation click ignored.');
         return;
@@ -468,13 +490,13 @@ async function handleImageClick(event) {
                 
                 // Add hover effects
                 group.on("mouseover", function(event) {
-                    d3.select(this)
-                        .style("opacity", 0.9)
-                        .style("stroke-width", "3px");
+                    // Highlight the hovered segment by increasing opacity of its pixels
+                    d3.select(this).selectAll("rect")
+                        .style("opacity", 0.9); // Adjust opacity for hover
                     
                     svg.selectAll(".segment")
                         .filter(other => other.id !== data.id)
-                        .style("opacity", 0.4);
+                        .style("opacity", 0.4); // Dim other segments
                     
                     let tooltipText = `${data.class}`;
                     if (data.score) {
@@ -483,9 +505,6 @@ async function handleImageClick(event) {
                     
                     const tooltip = d3.select(".segment-tooltip");
                     tooltip.html(tooltipText)
-                        .style("display", "block")
-                        .style("left", (event.pageX + 10) + "px")
-                        .style("top", (event.pageY + 10) + "px");
                 })
                 .on("mousemove", function(event) {
                     const tooltip = d3.select(".segment-tooltip");
@@ -495,8 +514,11 @@ async function handleImageClick(event) {
                 })
                 .on("mouseout", function() {
                     svg.selectAll(".segment")
-                        .style("opacity", 0.7)
-                        .style("stroke-width", "2px");
+                        .style("opacity", 0.7); // Restore opacity of all segments
+                    
+                    // Restore opacity of pixels in the hovered segment
+                    d3.select(this).selectAll("rect")
+                        .style("opacity", 0.7); // Adjust opacity back to normal
                     
                     const tooltip = d3.select(".segment-tooltip");
                     tooltip.style("display", "none");
@@ -660,53 +682,98 @@ async function runPreSegmentation() {
             regionGroups.each(function(region) {
                 console.log('Drawing region:', region);
                 const group = d3.select(this);
-                region.polygons.forEach(polygon => {
-                    // Ensure polygon is closed
-                    if (polygon.length > 0 && polygon[0] !== polygon[polygon.length - 1]) {
-                        polygon.push(polygon[0]);
+                // Draw mask pixels as rectangles
+                const mask = region.mask;
+                const color = region.color;
+
+                for (let y = 0; y < mask.length; y++) {
+                    for (let x = 0; x < mask[0].length; x++) {
+                        if (mask[y][x] === 1) {
+                            group.append("rect")
+                                .attr("x", x)
+                                .attr("y", y)
+                                .attr("width", 1)
+                                .attr("height", 1)
+                                .style("fill", `rgb(${color.join(",")})`)
+                                .style("opacity", 0.7) // Adjust opacity as needed
+                                .style("pointer-events", "auto");
+                        }
                     }
-                    
-                    // Create polygon with explicit styling
-                    group.append("polygon")
-                        .attr("points", polygon.map(p => `${p[0]},${p[1]}`).join(" "))
-                        .style("fill", `rgba(${region.color.join(",")}, 0.5)`)
-                        .style("stroke", `rgb(${region.color.join(",")})`)
-                        .style("stroke-width", "2px")
-                        .style("vector-effect", "non-scaling-stroke")
-                        .style("pointer-events", "auto");
-                });
+                }
             });
             
             // Add hover effects
             regionGroups
                 .on("mouseover", function(event, d) {
+                    // Highlight the hovered segment using a filter
                     d3.select(this)
-                        .style("opacity", 0.9)
-                        .style("stroke-width", "3px");
+                        .style("filter", "brightness(1.2)"); // Apply a brightness filter on hover
                     
                     svg.selectAll(".segment")
                         .filter(other => other.id !== d.id)
-                        .style("opacity", 0.4);
+                        .style("opacity", 0.4); // Dim other segments
                     
-                    let tooltipText = `${d.class}`;
-                    if (d.score) {
-                        tooltipText += ` (${(d.score * 100).toFixed(1)}%)`;
+                    // Find the center of the mask (optional - could use bounding box or just the event point)
+                    const mask = d.mask;
+                    let sumX = 0;
+                    let sumY = 0;
+                    let count = 0;
+                    for (let y = 0; y < mask.length; y++) {
+                        for (let x = 0; x < mask[0].length; x++) {
+                            if (mask[y][x] === 1) {
+                                sumX += x;
+                                sumY += y;
+                                count++;
+                            }
+                        }
                     }
+                    
+                    let bestMatch = null;
+                    if (count > 0) {
+                        const maskCenterX = sumX / count;
+                        const maskCenterY = sumY / count;
+                        
+                        // Find overlapping detection with highest confidence
+                        for (const detection of currentDetections) {
+                            // Check if mask center is within detection bounding box
+                            if (isPointInBox([maskCenterX, maskCenterY], detection.box)) {
+                                if (!bestMatch || detection.confidence > bestMatch.confidence) {
+                                    bestMatch = detection;
+                                }
+                            }
+                        }
+                    }
+                    
+                    let tooltipText;
+                    if (bestMatch) {
+                        // If object detection found, show its class and confidence
+                        tooltipText = `${bestMatch.class} (${(bestMatch.confidence * 100).toFixed(1)}%)`;
+                    } else {
+                        // If no object detection, show segmentation class without score
+                         tooltipText = `${d.class}`;
+                    }
+
+                    const tooltip = d3.select(".segment-tooltip");
                     tooltip.html(tooltipText)
                         .style("display", "block")
                         .style("left", (event.pageX + 10) + "px")
                         .style("top", (event.pageY + 10) + "px");
                 })
                 .on("mousemove", function(event) {
+                    const tooltip = d3.select(".segment-tooltip");
                     tooltip
                         .style("left", (event.pageX + 10) + "px")
                         .style("top", (event.pageY + 10) + "px");
                 })
                 .on("mouseout", function() {
                     svg.selectAll(".segment")
-                        .style("opacity", 0.7)
-                        .style("stroke-width", "2px");
+                        .style("opacity", 0.7); // Restore opacity of all segments
                     
+                    // Remove the filter from the hovered segment
+                    d3.select(this)
+                        .style("filter", null); // Remove the filter on mouseout
+                    
+                    const tooltip = d3.select(".segment-tooltip");
                     tooltip.style("display", "none");
                 });
             
@@ -715,4 +782,4 @@ async function runPreSegmentation() {
     } catch (err) {
         console.error('Error running pre-segmentation:', err);
     }
-} 
+}
