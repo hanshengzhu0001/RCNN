@@ -24,6 +24,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from transformers import AutoImageProcessor, MaskFormerForInstanceSegmentation
 from scipy import ndimage
+from science import ScientificImageAnalyzer
 
 # Load environment variables
 load_dotenv()
@@ -80,6 +81,7 @@ os.makedirs("static/images", exist_ok=True)
 
 # Sample images
 SAMPLE_IMAGES = [
+    "science1.jpg",    # Scientific image first
     "object1.jpg",     # First object image
     "object2.jpg",     # Second object image
     "landscape1.jpg",  # Landscape images
@@ -572,6 +574,22 @@ def get_objects(image_filename):
             return jsonify(json.load(f))
     
     return jsonify({"objects": []})
+
+analyzer = ScientificImageAnalyzer()
+
+@app.route('/api/analyze-scientific', methods=['POST'])
+def analyze_scientific():
+    data = request.get_json()
+    image_b64 = data['image']
+    # Decode base64 image and save temporarily
+    header, encoded = image_b64.split(',', 1)
+    img_bytes = base64.b64decode(encoded)
+    temp_path = 'static/images/temp_scientific.jpg'
+    with open(temp_path, 'wb') as f:
+        f.write(img_bytes)
+    result = analyzer.analyze_image(temp_path)
+    os.remove(temp_path)
+    return jsonify(result)
 
 if __name__ == '__main__':
     app.run(debug=True) 

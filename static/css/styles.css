@@ -1,0 +1,62 @@
+.analysis-results {
+    margin-top: 20px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.caption-section {
+    margin-bottom: 20px;
+}
+
+.caption-section h3 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+}
+
+.caption-section p {
+    color: #34495e;
+    line-height: 1.6;
+}
+
+.detections-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.detections-section h3 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+}
+
+.detections-section ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.detections-section li {
+    padding: 8px 0;
+    border-bottom: 1px solid #e9ecef;
+    color: #34495e;
+}
+
+.detections-section li:last-child {
+    border-bottom: none;
+}
+
+#analyzeButton {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+#analyzeButton:hover {
+    background-color: #2980b9;
+} 

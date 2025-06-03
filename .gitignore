@@ -1,4 +1,5 @@
 *.pth
+*.env
 *.pt
 processed_images.json
 venv/
