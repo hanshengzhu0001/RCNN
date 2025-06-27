@@ -10,10 +10,8 @@ Pillow==10.0.0
 python-dotenv==1.0.0
 pydub==0.25.1
 transformers==4.36.0
-timm==0.9.12 
+timm==0.9.12
 openai==1.60.0
 opencv-python>=4.8.0
-numpy>=1.24.0
 ultralytics>=8.0.0
-easyocr>=1.7.0
-Pillow>=10.0.0
+easyocr>=1.7.0 

@@ -81,7 +81,8 @@ os.makedirs("static/images", exist_ok=True)
 
 # Sample images
 SAMPLE_IMAGES = [
-    "science1.jpg",    # Scientific image first
+    "science3.png",    # Scientific image first - now using science3.png
+    "science1.jpg",    # Other scientific images
     "object1.jpg",     # First object image
     "object2.jpg",     # Second object image
     "landscape1.jpg",  # Landscape images
@@ -584,12 +585,66 @@ def analyze_scientific():
     # Decode base64 image and save temporarily
     header, encoded = image_b64.split(',', 1)
     img_bytes = base64.b64decode(encoded)
-    temp_path = 'static/images/temp_scientific.jpg'
-    with open(temp_path, 'wb') as f:
-        f.write(img_bytes)
-    result = analyzer.analyze_image(temp_path)
-    os.remove(temp_path)
-    return jsonify(result)
+    
+    # Ensure the directory exists
+    temp_dir = 'static/images'
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Use a unique temporary filename to avoid conflicts
+    import time
+    unique_id = int(time.time() * 1000)  # millisecond timestamp
+    temp_path = os.path.join(temp_dir, f'temp_scientific_{unique_id}.jpg')
+    
+    try:
+        # Save the image
+        with open(temp_path, 'wb') as f:
+            f.write(img_bytes)
+        
+        # Verify the file was written successfully
+        if not os.path.exists(temp_path):
+            return jsonify({"error": "Failed to save temporary image file"}), 500
+            
+        print(f"Temporary image saved at: {temp_path}")
+        
+        # Ensure file is fully written by checking size
+        import time
+        time.sleep(0.1)  # Small delay to ensure file is written
+        
+        if os.path.getsize(temp_path) == 0:
+            return jsonify({"error": "Temporary image file is empty"}), 500
+        
+        # Run the analysis
+        result = analyzer.analyze_image(temp_path)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error in analyze_scientific: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        # Clean up temp file with additional safety checks
+        try:
+            # Small delay before cleanup to ensure all operations are complete
+            import time
+            time.sleep(0.2)
+            
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                print(f"Cleaned up temporary file: {temp_path}")
+        except Exception as e:
+            print(f"Failed to clean up temporary file {temp_path}: {e}")
+            # Try to clean up any leftover temp files
+            try:
+                for f in os.listdir(temp_dir):
+                    if f.startswith('temp_scientific_') and f.endswith('.jpg'):
+                        old_file = os.path.join(temp_dir, f)
+                        if os.path.getctime(old_file) < time.time() - 300:  # Older than 5 minutes
+                            os.remove(old_file)
+                            print(f"Cleaned up old temp file: {old_file}")
+            except Exception as cleanup_e:
+                print(f"Failed to clean up old temp files: {cleanup_e}")
 
 if __name__ == '__main__':
     app.run(debug=True) 
