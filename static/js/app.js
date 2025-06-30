@@ -1107,7 +1107,7 @@ async function analyzeScientificImage() {
                     .attr("data-label", (det.element_type || 'Unknown Class'))
                     .attr("data-confidence", det.confidence)
                     .attr("data-caption", det.caption || '')
-                    .style("display", "none"); // Initially hidden
+                    .style("display", "block"); // Show chart elements by default
 
                 // Add event listeners
                 group.on("click", function(event) {
@@ -1192,7 +1192,7 @@ async function analyzeScientificImage() {
                     .attr("data-confidence", det.confidence)
                     .attr("data-text", det.text || '')
                     .attr("data-caption", det.caption || '')
-                    .style("display", "none"); // Initially hidden
+                    .style("display", "block"); // Show text elements by default
 
                 // Add event listeners
                  group.on("click", function(event) {
