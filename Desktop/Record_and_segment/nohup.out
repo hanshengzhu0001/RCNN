@@ -1,0 +1,94 @@
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/huggingface_hub/file_download.py:943: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+Could not find image processor class in the image processor config or the model config. Loading based on pattern matching with the model's feature extractor configuration.
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/models/maskformer/image_processing_maskformer.py:410: FutureWarning: The `size_divisibility` argument is deprecated and will be removed in v4.27. Please use `size_divisor` instead.
+  warnings.warn(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/models/maskformer/image_processing_maskformer.py:417: FutureWarning: The `max_size` argument is deprecated and will be removed in v4.27. Please use size['longest_edge'] instead.
+  warnings.warn(
+INFO:science_analyzer:🎯 STAGE 1: Initializing Chart Type Classification
+INFO:science_analyzer:Model: ResNet-50 with custom multi-layer head
+INFO:science_analyzer:Input: Raw image (224×224, ImageNet preprocessing)
+INFO:science_analyzer:Output: 28 chart type predictions with confidence scores
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.
+  warnings.warn(msg)
+INFO:science_analyzer:✅ Created model with multi-layer head (training-compatible)
+INFO:science_analyzer:   Architecture: 2048 → 512 → 28 classes
+INFO:science_analyzer:Attempting Method 1: torch.load with {'map_location': 'cpu', 'weights_only': False}
+INFO:science_analyzer:✅ Success with Method 1!
+INFO:science_analyzer:✅ Found 'model_state_dict' in checkpoint
+INFO:science_analyzer:   📋 Mapped: backbone.fc.0.weight → fc.0.weight
+INFO:science_analyzer:   📋 Mapped: backbone.fc.0.bias → fc.0.bias
+INFO:science_analyzer:   📋 Mapped: backbone.fc.3.weight → fc.3.weight
+INFO:science_analyzer:   📋 Mapped: backbone.fc.3.bias → fc.3.bias
+INFO:science_analyzer:🔍 Classification Head Analysis:
+INFO:science_analyzer:   Expected keys: ['fc.0.weight', 'fc.0.bias', 'fc.3.weight', 'fc.3.bias']
+INFO:science_analyzer:   Found keys: ['fc.0.weight', 'fc.0.bias', 'fc.3.weight', 'fc.3.bias']
+INFO:science_analyzer:   Classification head loaded: ✅ YES
+INFO:science_analyzer:🎯 Model loaded successfully on device: cpu
+INFO:science_analyzer:🔧 Model in eval mode: True
+INFO:science_analyzer:🔄 Using DocFigure ImageNet preprocessing:
+INFO:science_analyzer:   Size: 224×224
+INFO:science_analyzer:   Color: RGB order
+INFO:science_analyzer:   Range: [0,1] via ToTensor()
+INFO:science_analyzer:   Norm: ImageNet mean/std
+INFO:science_analyzer:✅ Stage 1 model loaded successfully!
+MaskFormer model loaded successfully
+Scientific Chart Analyzer initialized successfully
+ * Serving Flask app 'app' (lazy loading)
+ * Environment: production
+   WARNING: This is a development server. Do not use it in a production deployment.
+   Use a production WSGI server instead.
+ * Debug mode: on
+INFO:werkzeug: * Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+INFO:werkzeug: * Restarting with stat
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/utils/generic.py:441: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/utils/generic.py:309: FutureWarning: `torch.utils._pytree._register_pytree_node` is deprecated. Please use `torch.utils._pytree.register_pytree_node` instead.
+  _torch_pytree._register_pytree_node(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/huggingface_hub/file_download.py:943: FutureWarning: `resume_download` is deprecated and will be removed in version 1.0.0. Downloads always resume when possible. If you want to force a new download, use `force_download=True`.
+  warnings.warn(
+Could not find image processor class in the image processor config or the model config. Loading based on pattern matching with the model's feature extractor configuration.
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/models/maskformer/image_processing_maskformer.py:410: FutureWarning: The `size_divisibility` argument is deprecated and will be removed in v4.27. Please use `size_divisor` instead.
+  warnings.warn(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/transformers/models/maskformer/image_processing_maskformer.py:417: FutureWarning: The `max_size` argument is deprecated and will be removed in v4.27. Please use size['longest_edge'] instead.
+  warnings.warn(
+INFO:science_analyzer:🎯 STAGE 1: Initializing Chart Type Classification
+INFO:science_analyzer:Model: ResNet-50 with custom multi-layer head
+INFO:science_analyzer:Input: Raw image (224×224, ImageNet preprocessing)
+INFO:science_analyzer:Output: 28 chart type predictions with confidence scores
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/torchvision/models/_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+/Users/hanszhu/Desktop/Record_and_segment/venv/lib/python3.9/site-packages/torchvision/models/_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.
+  warnings.warn(msg)
+INFO:science_analyzer:✅ Created model with multi-layer head (training-compatible)
+INFO:science_analyzer:   Architecture: 2048 → 512 → 28 classes
+INFO:science_analyzer:Attempting Method 1: torch.load with {'map_location': 'cpu', 'weights_only': False}
+INFO:science_analyzer:✅ Success with Method 1!
+INFO:science_analyzer:✅ Found 'model_state_dict' in checkpoint
+INFO:science_analyzer:   📋 Mapped: backbone.fc.0.weight → fc.0.weight
+INFO:science_analyzer:   📋 Mapped: backbone.fc.0.bias → fc.0.bias
+INFO:science_analyzer:   📋 Mapped: backbone.fc.3.weight → fc.3.weight
+INFO:science_analyzer:   📋 Mapped: backbone.fc.3.bias → fc.3.bias
+INFO:science_analyzer:🔍 Classification Head Analysis:
+INFO:science_analyzer:   Expected keys: ['fc.0.weight', 'fc.0.bias', 'fc.3.weight', 'fc.3.bias']
+INFO:science_analyzer:   Found keys: ['fc.0.weight', 'fc.0.bias', 'fc.3.weight', 'fc.3.bias']
+INFO:science_analyzer:   Classification head loaded: ✅ YES
+INFO:science_analyzer:🎯 Model loaded successfully on device: cpu
+INFO:science_analyzer:🔧 Model in eval mode: True
+INFO:science_analyzer:🔄 Using DocFigure ImageNet preprocessing:
+INFO:science_analyzer:   Size: 224×224
+INFO:science_analyzer:   Color: RGB order
+INFO:science_analyzer:   Range: [0,1] via ToTensor()
+INFO:science_analyzer:   Norm: ImageNet mean/std
+INFO:science_analyzer:✅ Stage 1 model loaded successfully!
+WARNING:werkzeug: * Debugger is active!
+python3(67327) MallocStackLogging: can't turn off malloc stack logging because it was not enabled.
+INFO:werkzeug: * Debugger PIN: 121-525-190
+MaskFormer model loaded successfully
+Scientific Chart Analyzer initialized successfully
