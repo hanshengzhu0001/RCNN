@@ -1,0 +1,48 @@
+{
+    "images": [
+        {
+            "id": 1,
+            "file_name": "science2.jpg",
+            "width": 800,
+            "height": 600,
+            "chart_type": "line",
+            "plot_bb": [100, 100, 700, 500],
+            "axes_info": {
+                "x_axis": {
+                    "start": 100,
+                    "end": 700,
+                    "ticks": [150, 250, 350, 450, 550, 650],
+                    "labels": ["0", "1", "2", "3", "4", "5"]
+                },
+                "y_axis": {
+                    "start": 500,
+                    "end": 100,
+                    "ticks": [150, 250, 350, 450],
+                    "labels": ["0", "25", "50", "75"]
+                }
+            },
+            "data_series": [
+                {
+                    "type": "line",
+                    "points": [[150, 450], [250, 400], [350, 350], [450, 300], [550, 250], [650, 200]]
+                }
+            ]
+        }
+    ],
+    "annotations": [
+        {
+            "id": 1,
+            "image_id": 1,
+            "category_id": 1,
+            "bbox": [100, 100, 600, 400],
+            "area": 240000,
+            "iscrowd": 0
+        }
+    ],
+    "categories": [
+        {
+            "id": 1,
+            "name": "plot_area"
+        }
+    ]
+} 
