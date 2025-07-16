@@ -1,0 +1,6 @@
+venv/
+medsam_vit_b.pth
+sam_vit_h_4b8939.pth
+.cache/
+__pycache__/
+node_modules/.cache/ 
